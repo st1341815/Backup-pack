@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.fpk
+*.fpk.sha256
+.DS_Store

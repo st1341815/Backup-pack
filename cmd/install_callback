@@ -1,0 +1,32 @@
+#!/bin/sh
+# 安装后回调：包内容已就位，按 config.json 幂等同步本应用的 crontab 行。
+#
+# FIX-06  以 config.json 为唯一事实来源重写：用户在前端改过的表达式不会被覆盖，
+#         1.0.0 遗留的无标记旧行会被清掉。
+# 真机    crontab 属于「执行用户」，必须装到包用户名下——UI 的 CGI 以包用户运行，
+#         若这里用 root 写，会出现双份任务且权限不一致。
+set -u
+
+LIB="${TRIM_APPDEST:-/var/apps/backup-pack/target}/lib"
+APP_USER="${TRIM_USERNAME:-backup-pack}"
+PY=/usr/bin/python3
+
+if [ ! -f "$LIB/config.py" ]; then
+    echo "install_callback: 未找到 $LIB/config.py，跳过定时任务初始化" >&2
+    exit 0
+fi
+
+if [ -x "$PY" ]; then
+    if [ "$(id -u)" = "0" ] && command -v runuser >/dev/null 2>&1 && [ -n "$APP_USER" ]; then
+        runuser -u "$APP_USER" -- "$PY" "$LIB/config.py" --install-cron
+        rc=$?
+    else
+        "$PY" "$LIB/config.py" --install-cron
+        rc=$?
+    fi
+    [ $rc -ne 0 ] && echo "install_callback: crontab 初始化失败（rc=$rc），应用仍可手动备份" >&2
+else
+    echo "install_callback: 未找到 $PY，跳过定时任务初始化" >&2
+fi
+
+exit 0

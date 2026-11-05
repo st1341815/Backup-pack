@@ -1,0 +1,23 @@
+#!/bin/sh
+# 卸载回调。幂等。
+# 只清理本应用的 crontab 行（含 1.0.0 遗留的无标记行），
+# 不删除 config.json、status.json、日志与备份包，重装后可继续使用。
+set -u
+
+LIB="${TRIM_APPDEST:-/var/apps/backup-pack/target}/lib"
+APP_USER="${TRIM_USERNAME:-backup-pack}"
+PY=/usr/bin/python3
+
+if [ ! -f "$LIB/config.py" ]; then
+    echo "uninstall_callback: 未找到 $LIB/config.py，请手动检查 crontab -l" >&2
+    exit 0
+fi
+
+if [ "$(id -u)" = "0" ] && command -v runuser >/dev/null 2>&1 && [ -n "$APP_USER" ]; then
+    runuser -u "$APP_USER" -- "$PY" "$LIB/config.py" --remove-cron || \
+        echo "uninstall_callback: 清理 crontab 失败，请手动检查 crontab -l" >&2
+else
+    "$PY" "$LIB/config.py" --remove-cron || \
+        echo "uninstall_callback: 清理 crontab 失败，请手动检查 crontab -l" >&2
+fi
+exit 0

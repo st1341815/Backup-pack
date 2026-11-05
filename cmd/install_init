@@ -1,0 +1,19 @@
+#!/bin/sh
+# 安装前回调：只准备运行时数据目录，不碰 crontab。
+# 此时包内容（$TRIM_APPDEST）可能尚未解压完成，任何依赖 lib/ 的动作都放到
+# install_callback（安装后）里做，避免因找不到文件而中断安装。
+set -u
+
+VAR="${TRIM_PKGVAR:-/var/apps/backup-pack/var}"
+APP_USER="${TRIM_USERNAME:-backup-pack}"
+APP_GROUP="${TRIM_GROUPNAME:-$APP_USER}"
+
+mkdir -p "$VAR" 2>/dev/null || true
+chmod 775 "$VAR" 2>/dev/null || true
+# 关键：本脚本以 root 运行，mkdir 出来的 var 属主是 root，包用户写不进去
+# （典型症状是「网页能点，日志/status 写不了」）。这里显式交给包用户。
+if [ "$(id -u)" = "0" ]; then
+    chown "$APP_USER:$APP_GROUP" "$VAR" 2>/dev/null || true
+fi
+
+exit 0

@@ -1,0 +1,105 @@
+#!/bin/sh
+# 应用生命周期：管理常驻 HTTP 服务。
+#
+# 形态：fnOS 统一网关（gateway）模式。服务监听 target 目录下的 unix socket，
+# 由 fnOS 网关按 gatewayPrefix（/app/backup-pack）反代，
+# 因此页面与桌面同源 —— 这是调用 fnOS 原生目录选择器（penpal 桥）的前提。
+#
+# 约定：start/stop 成功返回 0；status 运行中返回 0、未运行返回 3。
+set -u
+
+TARGET="${TRIM_APPDEST:-/var/apps/backup-pack/target}"
+VAR="${TRIM_PKGVAR:-/var/apps/backup-pack/var}"
+APP_USER="${TRIM_USERNAME:-backup-pack}"
+PY=/usr/bin/python3
+SERVER="$TARGET/server/server.py"
+SOCK="$TARGET/backup-pack.sock"
+BASE_PATH="/app/backup-pack"
+PIDF="$VAR/server.pid"
+LOGF="$VAR/server.log"
+
+mkdir -p "$VAR" 2>/dev/null || true
+
+socket_up() {
+    [ -S "$SOCK" ] || return 1
+    # 能连上才算活（残留 socket 文件不算）
+    "$PY" - "$SOCK" <<'EOF' >/dev/null 2>&1
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(1)
+s.connect(sys.argv[1])
+s.close()
+EOF
+}
+
+pid_alive() {
+    [ -f "$PIDF" ] || return 1
+    pid=$(cat "$PIDF" 2>/dev/null) || return 1
+    [ -n "$pid" ] || return 1
+    kill -0 "$pid" 2>/dev/null
+}
+
+do_start() {
+    if socket_up; then
+        return 0
+    fi
+    if [ ! -f "$SERVER" ]; then
+        echo "缺少 $SERVER，安装包不完整" >&2
+        return 1
+    fi
+    rm -f "$SOCK"
+
+    # cmd/main 可能以 root 被调用，必须降权到包用户
+    if [ "$(id -u)" = "0" ] && command -v runuser >/dev/null 2>&1 && [ -n "$APP_USER" ]; then
+        BACKUP_PACK_BASE_PATH="$BASE_PATH" nohup runuser -u "$APP_USER" -- \
+            "$PY" "$SERVER" --socket "$SOCK" >> "$LOGF" 2>&1 &
+    else
+        BACKUP_PACK_BASE_PATH="$BASE_PATH" nohup \
+            "$PY" "$SERVER" --socket "$SOCK" >> "$LOGF" 2>&1 &
+    fi
+    echo $! > "$PIDF"
+
+    i=0
+    while [ $i -lt 20 ]; do
+        if socket_up; then
+            return 0
+        fi
+        sleep 0.5
+        i=$((i + 1))
+    done
+    echo "启动超时，请查看 $LOGF" >&2
+    return 1
+}
+
+do_stop() {
+    if pid_alive; then
+        kill "$(cat "$PIDF")" 2>/dev/null || true
+    fi
+    pkill -f "$SERVER --socket $SOCK" 2>/dev/null || true
+    rm -f "$PIDF"
+    i=0
+    while [ $i -lt 10 ]; do
+        socket_up || { rm -f "$SOCK"; return 0; }
+        sleep 0.5
+        i=$((i + 1))
+    done
+    rm -f "$SOCK"
+    return 0
+}
+
+do_status() {
+    if socket_up; then
+        return 0
+    fi
+    return 3
+}
+
+case "${1:-}" in
+    start)  do_start  ;;
+    stop)   do_stop   ;;
+    status) do_status ;;
+    *)
+        echo "用法：$0 {start|stop|status}" >&2
+        exit 1
+        ;;
+esac

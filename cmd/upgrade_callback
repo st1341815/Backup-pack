@@ -1,0 +1,17 @@
+#!/bin/sh
+# 升级后回调：以 config.json 为事实来源幂等同步 crontab（不覆盖用户表达式）。
+# 与 install_callback 同逻辑，重复执行无副作用。
+set -u
+LIB="${TRIM_APPDEST:-/var/apps/backup-pack/target}/lib"
+APP_USER="${TRIM_USERNAME:-backup-pack}"
+PY=/usr/bin/python3
+[ -f "$LIB/config.py" ] || exit 0
+[ -x "$PY" ] || exit 0
+if [ "$(id -u)" = "0" ] && command -v runuser >/dev/null 2>&1 && [ -n "$APP_USER" ]; then
+    runuser -u "$APP_USER" -- "$PY" "$LIB/config.py" --install-cron || \
+        echo "upgrade_callback: crontab 同步失败，请检查 crontab -l" >&2
+else
+    "$PY" "$LIB/config.py" --install-cron || \
+        echo "upgrade_callback: crontab 同步失败，请检查 crontab -l" >&2
+fi
+exit 0

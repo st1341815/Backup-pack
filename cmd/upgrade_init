@@ -1,0 +1,5 @@
+#!/bin/sh
+# 升级前回调：保留用户配置与备份包，只确保运行时目录存在。
+set -u
+mkdir -p "${TRIM_PKGVAR:-/var/apps/backup-pack/var}" 2>/dev/null || true
+exit 0
