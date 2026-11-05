@@ -19,6 +19,13 @@ MODE=${2:-}
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 cd "$SRC"
 
+# 本机 ssh 用的是 passwd 里的 home（/home/<user>，实际不存在），不会读 $HOME，
+# 所以必须显式 -F 指向真实 config，否则 push 报 Host key verification failed。
+export HOME="${HOME:-/vol1/@appshare/octop-native/data}"
+if [ -f "$HOME/.ssh/config" ]; then
+    export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config -o BatchMode=yes"
+fi
+
 APPNAME=$(sed -n 's/^appname[[:space:]]*=[[:space:]]*//p' manifest | head -1 | tr -d '"' | tr -d ' \r')
 VER=$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' manifest | head -1 | tr -d '"' | tr -d ' \r')
 TAG="v$VER"
